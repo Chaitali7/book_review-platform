@@ -27,6 +27,21 @@ A full-stack web application for book reviews and ratings, built with the MERN s
 - MongoDB with Mongoose
 - JWT for authentication
 
+## Database Seeding
+
+The application comes with a sample dataset of books that can be loaded using the seed script. This includes:
+- 10 popular books with cover images
+- Sample ratings and reviews
+- Various genres and authors
+
+To seed the database:
+```bash
+cd server
+npm run seed
+```
+
+To modify the sample data, edit the `server/utils/seedBooks.js` file.
+
 ## Getting Started
 
 ### Prerequisites
