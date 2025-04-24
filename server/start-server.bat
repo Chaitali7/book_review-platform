@@ -1,0 +1,9 @@
+@echo off
+echo Starting MongoDB...
+start mongod
+
+echo Waiting for MongoDB to start...
+timeout /t 5
+
+echo Starting server...
+npm run dev 
