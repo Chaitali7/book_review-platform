@@ -82,6 +82,23 @@ const getUserReviews = asyncHandler(async (req, res) => {
 const createReview = asyncHandler(async (req, res) => {
   const { bookId, rating, review } = req.body;
 
+  if (!req.user || !req.user._id) {
+    res.status(401);
+    throw new Error('User not authenticated');
+  }
+
+  if (!bookId || !rating || !review) {
+    res.status(400);
+    throw new Error('Please provide bookId, rating and review');
+  }
+
+  // Check if book exists
+  const book = await Book.findById(bookId);
+  if (!book) {
+    res.status(404);
+    throw new Error('Book not found');
+  }
+
   // Check if user has already reviewed this book
   const existingReview = await Review.findOne({
     userId: req.user._id,
@@ -99,15 +116,6 @@ const createReview = asyncHandler(async (req, res) => {
     rating,
     review
   });
-
-  // Update book's average rating
-  const book = await Book.findById(bookId);
-  const reviews = await Review.find({ bookId });
-  const averageRating = reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length;
-  
-  book.averageRating = averageRating;
-  book.totalReviews = reviews.length;
-  await book.save();
 
   const populatedReview = await Review.findById(newReview._id)
     .populate('userId', 'username profilePicture')
@@ -179,32 +187,21 @@ const deleteReview = asyncHandler(async (req, res) => {
     throw new Error('Not authorized to delete this review');
   }
 
-  await review.remove();
-
-  // Update book's average rating
-  const book = await Book.findById(review.bookId);
-  const reviews = await Review.find({ bookId: review.bookId });
-  const averageRating = reviews.length > 0
-    ? reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length
-    : 0;
-  
-  book.averageRating = averageRating;
-  book.totalReviews = reviews.length;
-  await book.save();
+  await review.deleteOne();
 
   res.json({
     success: true,
+    reviewId: reviewId,
     message: 'Review deleted successfully'
   });
 });
 
-// @desc    Vote on a review (helpful/not helpful)
+// @desc    Vote on a review
 // @route   POST /api/reviews/:id/vote
 // @access  Private
 const voteReview = asyncHandler(async (req, res) => {
   const { helpful } = req.body;
   const reviewId = req.params.id;
-  const userId = req.user._id;
 
   const review = await Review.findById(reviewId);
 
@@ -213,18 +210,16 @@ const voteReview = asyncHandler(async (req, res) => {
     throw new Error('Review not found');
   }
 
-  // Check if user has already voted
-  const existingVote = review.votes.find(
-    vote => vote.userId.toString() === userId.toString()
+  // Remove existing vote by this user if any
+  review.votes = review.votes.filter(
+    vote => vote.userId.toString() !== req.user._id.toString()
   );
 
-  if (existingVote) {
-    // Update existing vote
-    existingVote.helpful = helpful;
-  } else {
-    // Add new vote
-    review.votes.push({ userId, helpful });
-  }
+  // Add new vote
+  review.votes.push({
+    userId: req.user._id,
+    helpful: helpful
+  });
 
   await review.save();
 

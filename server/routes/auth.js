@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { auth } = require('../middleware/auth');
+const { protect } = require('../middleware/authMiddleware');
 const validator = require('validator');
 
 // Register new user
@@ -123,7 +123,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Get user profile
-router.get('/profile', auth, async (req, res) => {
+router.get('/profile', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('-password');
     res.json(user);

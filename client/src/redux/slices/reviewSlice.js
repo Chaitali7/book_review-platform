@@ -161,7 +161,8 @@ const reviewSlice = createSlice({
       })
       .addCase(createReview.fulfilled, (state, action) => {
         state.loading = false;
-        state.reviews.unshift(action.payload);
+        state.bookReviews.unshift(action.payload.review);
+        state.totalReviews += 1;
       })
       .addCase(createReview.rejected, (state, action) => {
         state.loading = false;
@@ -192,9 +193,11 @@ const reviewSlice = createSlice({
       })
       .addCase(deleteReview.fulfilled, (state, action) => {
         state.loading = false;
+        state.error = null;
         state.bookReviews = state.bookReviews.filter(
-          (review) => review._id !== action.payload
+          (review) => review._id !== action.payload.reviewId
         );
+        state.totalReviews = state.totalReviews > 0 ? state.totalReviews - 1 : 0;
       })
       .addCase(deleteReview.rejected, (state, action) => {
         state.loading = false;

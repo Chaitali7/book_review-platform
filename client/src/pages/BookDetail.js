@@ -31,6 +31,7 @@ import {
   deleteReview,
   voteReview,
 } from '../redux/slices/reviewSlice';
+import { getProfile } from '../redux/slices/authSlice';
 
 const BookDetail = () => {
   const { id } = useParams();
@@ -55,10 +56,16 @@ const BookDetail = () => {
   useEffect(() => {
     dispatch(fetchBookById(id));
     dispatch(fetchBookReviews({ bookId: id }));
+    
+    // Fetch user profile if authenticated but no user data
+    if (isAuthenticated && !user) {
+      dispatch(getProfile());
+    }
+    
     return () => {
       dispatch(clearCurrentBook());
     };
-  }, [dispatch, id]);
+  }, [dispatch, id, isAuthenticated, user]);
 
   const handleReviewSubmit = async (e) => {
     e.preventDefault();
@@ -70,12 +77,18 @@ const BookDetail = () => {
         })
       );
     } else {
-      await dispatch(
+      const result = await dispatch(
         createReview({
           bookId: id,
           ...reviewForm,
         })
       );
+      
+      // Check if the action was rejected
+      if (createReview.rejected.match(result)) {
+        // Keep dialog open if there was an error
+        return;
+      }
     }
     setIsReviewDialogOpen(false);
     setReviewForm({ rating: 0, review: '' });
@@ -93,12 +106,25 @@ const BookDetail = () => {
 
   const handleDeleteReview = async (reviewId) => {
     if (window.confirm('Are you sure you want to delete this review?')) {
-      await dispatch(deleteReview(reviewId));
+      const result = await dispatch(deleteReview(reviewId));
+      if (!deleteReview.rejected.match(result)) {
+        // Refresh book details to update the review count and average rating
+        dispatch(fetchBookById(id));
+      }
     }
   };
 
   const handleVoteReview = async (reviewId, helpful) => {
     await dispatch(voteReview({ id: reviewId, helpful }));
+  };
+
+  const isUsersReview = (review) => {
+    return isAuthenticated && 
+           user && 
+           user._id && 
+           review.userId && 
+           review.userId._id && 
+           review.userId._id.toString() === user._id.toString();
   };
 
   if (bookLoading || reviewsLoading) {
@@ -195,42 +221,39 @@ const BookDetail = () => {
           </Alert>
         )}
 
-        {reviews.map((review) => (
+        {reviews.map((review) => {
+          // Debug log to check user IDs
+          console.log('Review user ID:', review.userId._id);
+          console.log('Current user ID:', user?._id);
+          console.log('Is authenticated:', isAuthenticated);
+          
+          return (
           <Card key={review._id} sx={{ mb: 2 }}>
             <CardContent>
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                }}
-              >
-                <Box>
-                  <Typography variant="h6" gutterBottom>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="subtitle1" component="div">
                     {review.userId.username}
                   </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Rating value={review.rating} readOnly size="small" />
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ ml: 1 }}
-                    >
+                  <Typography variant="body2" color="text.secondary">
                       {new Date(review.createdAt).toLocaleDateString()}
                     </Typography>
-                  </Box>
                 </Box>
-                {user?._id === review.userId._id && (
-                  <Box>
+                <Rating value={review.rating} readOnly sx={{ mb: 1 }} />
+                <Typography variant="body1" paragraph>
+                  {review.review}
+                </Typography>
+                {isUsersReview(review) && (
+                  <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
                     <Button
                       size="small"
+                      variant="outlined"
                       onClick={() => handleEditReview(review)}
-                      sx={{ mr: 1 }}
                     >
                       Edit
                     </Button>
                     <Button
                       size="small"
+                      variant="outlined"
                       color="error"
                       onClick={() => handleDeleteReview(review._id)}
                     >
@@ -238,36 +261,18 @@ const BookDetail = () => {
                     </Button>
                   </Box>
                 )}
-              </Box>
-              <Typography variant="body1" paragraph>
-                {review.review}
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Button
-                  size="small"
-                  onClick={() => handleVoteReview(review._id, true)}
-                  sx={{ mr: 1 }}
-                >
-                  Helpful ({review.helpfulVotes})
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() => handleVoteReview(review._id, false)}
-                >
-                  Not Helpful ({review.unhelpfulVotes})
-                </Button>
-              </Box>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
 
         {/* Review Dialog */}
         <Dialog
           open={isReviewDialogOpen}
           onClose={() => {
             setIsReviewDialogOpen(false);
-            setEditingReview(null);
             setReviewForm({ rating: 0, review: '' });
+            setEditingReview(null);
           }}
           maxWidth="sm"
           fullWidth
@@ -277,6 +282,11 @@ const BookDetail = () => {
           </DialogTitle>
           <form onSubmit={handleReviewSubmit}>
             <DialogContent>
+              {reviewError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {reviewError}
+                </Alert>
+              )}
               <Box sx={{ mb: 2 }}>
                 <Typography component="legend">Rating</Typography>
                 <Rating
@@ -288,30 +298,27 @@ const BookDetail = () => {
                 />
               </Box>
               <TextField
+                autoFocus
+                margin="dense"
+                label="Your Review"
+                type="text"
                 fullWidth
                 multiline
                 rows={4}
-                label="Review"
-                name="review"
                 value={reviewForm.review}
                 onChange={(e) =>
                   setReviewForm({ ...reviewForm, review: e.target.value })
                 }
-                required
               />
             </DialogContent>
             <DialogActions>
+              <Button onClick={() => setIsReviewDialogOpen(false)}>Cancel</Button>
               <Button
-                onClick={() => {
-                  setIsReviewDialogOpen(false);
-                  setEditingReview(null);
-                  setReviewForm({ rating: 0, review: '' });
-                }}
+                type="submit"
+                variant="contained"
+                disabled={!reviewForm.rating || !reviewForm.review}
               >
-                Cancel
-              </Button>
-              <Button type="submit" variant="contained" color="primary">
-                {editingReview ? 'Update Review' : 'Submit Review'}
+                {editingReview ? 'Update' : 'Submit'}
               </Button>
             </DialogActions>
           </form>

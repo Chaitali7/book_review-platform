@@ -21,8 +21,7 @@ const reviewSchema = new mongoose.Schema(
     review: {
       type: String,
       required: true,
-      trim: true,
-      minlength: 10
+      trim: true
     },
     votes: [{
       userId: {
@@ -55,21 +54,33 @@ reviewSchema.virtual('notHelpfulVotes').get(function() {
 // Compound index to ensure a user can only review a book once
 reviewSchema.index({ userId: 1, bookId: 1 }, { unique: true });
 
+// Helper function to update book rating
+async function updateBookRating(bookId) {
+  try {
+    const Book = mongoose.model('Book');
+    const book = await Book.findById(bookId);
+    if (book) {
+      const reviews = await mongoose.model('Review').find({ bookId });
+      const averageRating = reviews.length > 0
+        ? reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length
+        : 0;
+      
+      book.averageRating = averageRating;
+      book.totalReviews = reviews.length;
+      await book.save();
+    }
+  } catch (error) {
+    console.error('Error updating book rating:', error);
+  }
+}
+
 // Middleware to update book's average rating after review changes
 reviewSchema.post('save', async function() {
-  const Book = mongoose.model('Book');
-  const book = await Book.findById(this.bookId);
-  if (book) {
-    await book.updateAverageRating();
-  }
+  await updateBookRating(this.bookId);
 });
 
-reviewSchema.post('remove', async function() {
-  const Book = mongoose.model('Book');
-  const book = await Book.findById(this.bookId);
-  if (book) {
-    await book.updateAverageRating();
-  }
+reviewSchema.post('deleteOne', { document: true, query: false }, async function() {
+  await updateBookRating(this.bookId);
 });
 
 const Review = mongoose.model('Review', reviewSchema);
